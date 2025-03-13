@@ -59,7 +59,7 @@ load_config_from_env()
 
 # OpenAI configuration - Changed from Azure-specific to standard OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # Default model name
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Default model name
 
 # Print configuration for debugging
 print("OpenAI Configuration:")
