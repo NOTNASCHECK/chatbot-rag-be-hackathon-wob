@@ -7,7 +7,7 @@ from typing import List, Literal, Dict, Any, Optional
 import uuid
 from datetime import datetime
 import os
-from openai import AzureOpenAI
+from openai import OpenAI  # Changed from AzureOpenAI to OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 import json
@@ -57,30 +57,24 @@ def load_config_from_env():
 # Load environment variables
 load_config_from_env()
 
-# Azure OpenAI configuration
-AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
-AZURE_OPENAI_KEY = os.getenv("AZURE_OPENAI_KEY")
-AZURE_OPENAI_DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+# OpenAI configuration - Changed from Azure-specific to standard OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")  # Default model name
 
 # Print configuration for debugging
-print("Azure OpenAI Configuration:")
-print(f"Endpoint: {AZURE_OPENAI_ENDPOINT}")
-print(f"API Key: {'Set' if AZURE_OPENAI_KEY else 'Not Set'}")
-print(f"Deployment: {AZURE_OPENAI_DEPLOYMENT}")
-print(f"API Version: {AZURE_OPENAI_API_VERSION}")
+print("OpenAI Configuration:")
+print(f"API Key: {'Set' if OPENAI_API_KEY else 'Not Set'}")
+print(f"Model: {OPENAI_MODEL}")
 
-# Create an Azure OpenAI client
-client = AzureOpenAI(
-    azure_endpoint=AZURE_OPENAI_ENDPOINT,
-    api_key=AZURE_OPENAI_KEY,
-    api_version=AZURE_OPENAI_API_VERSION,
+# Create an OpenAI client - Changed from AzureOpenAI to OpenAI
+client = OpenAI(
+    api_key=OPENAI_API_KEY,
 )
 
 # Create FastAPI app with custom configuration
 app = FastAPI(
-    title="Chat API with Azure GPT-4o and Function Calling",
-    description="A RESTful API for chatting with Azure OpenAI GPT-4o model, with function calling capabilities",
+    title="Chat API with OpenAI GPT-4o and Function Calling",  # Removed Azure from title
+    description="A RESTful API for chatting with OpenAI GPT-4o model, with function calling capabilities",  # Removed Azure
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -214,15 +208,15 @@ with open(Path.cwd() / "prompts" / "system_prompt.txt", "rb") as f:
 
 async def get_gpt4o_response(messages):
     """
-    Get a response from Azure GPT-4o for the given messages, with function calling.
+    Get a response from OpenAI GPT-4o for the given messages, with function calling.
     """
     # Check if environment variables are properly loaded
-    if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_KEY:
-        error_message = "Azure OpenAI credentials not configured correctly."
+    if not OPENAI_API_KEY:
+        error_message = "OpenAI API key not configured correctly."
         print(f"ERROR: {error_message}")
         print("Make sure your .env file exists and contains the required variables.")
-        print("Required variables: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_KEY")
-        print("Optional variables: AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION")
+        print("Required variables: OPENAI_API_KEY")
+        print("Optional variables: OPENAI_MODEL")
         raise HTTPException(status_code=500, detail=error_message)
 
     # Always include system instruction
@@ -269,7 +263,7 @@ async def get_gpt4o_response(messages):
 
     try:
         response = client.chat.completions.create(
-            model=AZURE_OPENAI_DEPLOYMENT,
+            model=OPENAI_MODEL,  # Changed from AZURE_OPENAI_DEPLOYMENT to OPENAI_MODEL
             messages=openai_messages,
             max_tokens=8000,
             tools=available_functions,
@@ -308,7 +302,7 @@ async def get_gpt4o_response(messages):
             return {"role": "ai", "content": ai_message.content}
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
-        raise HTTPException(status_code=500, detail=f"Azure OpenAI API error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -508,14 +502,38 @@ async def get_open_api_endpoint():
     Returns the OpenAPI schema.
     """
     return get_openapi(
-        title="Chat API with Azure GPT-4o and Function Calling",
+        title="Chat API with OpenAI GPT-4o and Function Calling",  # Removed Azure from title
         version="1.0.0",
-        description="A RESTful API for chatting with Azure OpenAI GPT-4o model, with function calling capabilities",
+        description="A RESTful API for chatting with OpenAI GPT-4o model, with function calling capabilities",  # Removed Azure
         routes=app.routes,
     )
 
 
 if __name__ == "__main__":
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=3005)
+    import argparse
+    
+    # Set up command line argument parsing
+    parser = argparse.ArgumentParser(description="Run the FastAPI server with optional HTTPS support")
+    parser.add_argument("--secure", action="store_true", help="Enable HTTPS with SSL certificates")
+    args = parser.parse_args()
+    
+    # Certificate paths from your Let's Encrypt setup
+    ssl_keyfile = "/etc/letsencrypt/live/invade.phat-invaders.com/privkey.pem"
+    ssl_certfile = "/etc/letsencrypt/live/invade.phat-invaders.com/cert.pem"
+    ssl_ca_certs = "/etc/letsencrypt/live/invade.phat-invaders.com/chain.pem"
+    
+    # Run with or without SSL based on the --secure flag
+    if args.secure:
+        print("Starting server with HTTPS enabled")
+        uvicorn.run(
+            app, 
+            host="0.0.0.0", 
+            port=3005,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+            ssl_ca_certs=ssl_ca_certs
+        )
+    else:
+        print("Starting server in HTTP mode (no SSL)")
+        uvicorn.run(app, host="0.0.0.0", port=3005)
