@@ -18,7 +18,12 @@
       {
         "section_title": "An wen muss ich mich wenden?",
         "section_content": "-    Für die Erteilung eines nationalen Visums vor der Einreise in das Bundesgebiet: Die deutsche Auslandsvertretung (Botschaft, Konsulat)  -    Für die Erteilung einer Aufenthaltserlaubnis nach der Einreise: Die für den Wohnsitz des Antragstellenden zuständige Ausländerbehörde    Für das beschleunigte Fachkräfteverfahren:   Ausländerbehörde am Ort der Dienstverrichtung, soweit keine zentrale Stelle für die Durchführung des Verfahrens eingerichtet wurde.\nKostenlose Beratung zu den Themen Einreise, Aufenthalt und Beruf erhalten Sie auch bei der ‚Hotline Arbeiten und Leben in Deutschland‘ vom Portal der Bundesregierung für Fachkräfte aus dem Ausland. Telefon: 030 1815-1111 Servicezeiten: Montag bis Freitag von 8:00 bis 16:00 Uhr",
-        "section_links": []
+        "section_links": [
+          {
+            "text": "Portal der Bundesregierung für Fachkräfte aus dem Ausland",
+            "link": "https://www.make-it-in-germany.com/de/visum-aufenthalt"
+          }
+        ]
       },
       {
         "section_title": "Voraussetzungen",
