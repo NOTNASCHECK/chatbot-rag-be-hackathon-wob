@@ -1,5 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 from typing import List, Literal
 import uuid
@@ -72,7 +74,15 @@ client = AzureOpenAI(
     api_version=AZURE_OPENAI_API_VERSION
 )
 
-app = FastAPI(title="Chat API with Azure GPT-4o")
+# Create FastAPI app with custom configuration
+app = FastAPI(
+    title="Chat API with Azure GPT-4o",
+    description="A RESTful API for chatting with Azure OpenAI GPT-4o model",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
+)
 
 # Configure CORS
 app.add_middleware(
@@ -211,6 +221,30 @@ async def hello_world():
     Simple hello world endpoint to test the API is working.
     """
     return {"message": "Hello, World!"}
+
+@app.get("/swagger", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """
+    Custom Swagger UI endpoint.
+    """
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Chat API - Swagger UI",
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
+
+@app.get("/openapi.json", include_in_schema=False)
+async def get_open_api_endpoint():
+    """
+    Returns the OpenAPI schema.
+    """
+    return get_openapi(
+        title="Chat API with Azure GPT-4o",
+        version="1.0.0",
+        description="A RESTful API for chatting with Azure OpenAI GPT-4o model",
+        routes=app.routes,
+    )
 
 class ChatTestRequest(BaseModel):
     message: str
