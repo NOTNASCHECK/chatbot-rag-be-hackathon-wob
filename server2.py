@@ -93,6 +93,13 @@ class ChatResponse(BaseModel):
 # In-memory storage for chats
 chat_history = {}
 
+# System message/context to be included in all conversations
+SYSTEM_CONTEXT = """You are a helpful AI assistant with expertise in technology and programming. 
+Your name is DevBot and you were created to help users with their technical questions.
+You should be friendly, concise, and accurate in your responses.
+When answering programming questions, include code examples when appropriate.
+If you don't know an answer, be honest about your limitations instead of making up information."""
+
 # Definition of a message:
 # A message represents a single unit of communication in the chat.
 # - 'role' indicates who sent the message ('user', 'system', or 'ai')
@@ -117,7 +124,10 @@ async def get_gpt4o_response(messages):
         )
     
     # Convert our messages to OpenAI format
-    openai_messages = []
+    openai_messages = [
+        {"role": "system", "content": SYSTEM_CONTEXT}
+    ]
+    
     for msg in messages:
         role = "assistant" if msg.role == "ai" else msg.role
         openai_messages.append({"role": role, "content": msg.content})
@@ -195,25 +205,21 @@ async def get_all_chats():
     """
     return list(chat_history.values())
 
-@app.get("/hello")
-async def hello_world():
-    """
-    Simple hello world endpoint to test the API is working.
-    """
-    return {"message": "Hello, World!"}
-
 class ChatTestRequest(BaseModel):
     message: str
+    include_context: bool = False
 
 class ChatTestResponse(BaseModel):
     message: str
     response: str
+    system_context: str = None
 
 @app.post("/chat-test", response_model=ChatTestResponse)
 async def chat_test(request: ChatTestRequest):
     """
     Simple endpoint to test the chat functionality.
     Send a single message and get a direct response from Azure GPT-4o.
+    Optional: include_context=true to see the system context in the response.
     """
     # Create a simple message array with just this one message
     test_message = Message(
@@ -225,10 +231,46 @@ async def chat_test(request: ChatTestRequest):
     # Get AI response
     ai_response = await get_gpt4o_response([test_message])
     
-    return ChatTestResponse(
+    response = ChatTestResponse(
         message=request.message,
         response=ai_response
     )
+    
+    # Optionally include system context in the response
+    if request.include_context:
+        response.system_context = SYSTEM_CONTEXT
+    
+    return response
+
+class UpdateContextRequest(BaseModel):
+    context: str
+    
+class UpdateContextResponse(BaseModel):
+    previous_context: str
+    new_context: str
+    updated: bool
+
+@app.post("/update-context", response_model=UpdateContextResponse)
+async def update_context(request: UpdateContextRequest):
+    """
+    Update the system context/knowledge used by the chatbot.
+    """
+    global SYSTEM_CONTEXT
+    previous_context = SYSTEM_CONTEXT
+    SYSTEM_CONTEXT = request.context
+    
+    return UpdateContextResponse(
+        previous_context=previous_context,
+        new_context=SYSTEM_CONTEXT,
+        updated=True
+    )
+
+@app.get("/context")
+async def get_context():
+    """
+    Get the current system context/knowledge used by the chatbot.
+    """
+    return {"context": SYSTEM_CONTEXT}
 
 if __name__ == "__main__":
     import uvicorn
