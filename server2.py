@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_swagger_ui_html
 from pydantic import BaseModel
 from typing import List, Literal
 import uuid
@@ -74,7 +75,14 @@ client = AzureOpenAI(
     api_version=AZURE_OPENAI_API_VERSION,
 )
 
-app = FastAPI(title="Chat API with Azure GPT-4o")
+app = FastAPI(
+    title="Chat API with Azure GPT-4o",
+    description="A RESTful API for chatting with Azure OpenAI GPT-4o model",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 
 # Configure CORS
 app.add_middleware(
@@ -116,7 +124,6 @@ with open(Path.cwd() / "prompts" / "system_prompt.txt", "rb") as f:
 with open(Path.cwd() / "prompts" / "abfallentsorgung.txt", "rb") as f:
     SYSTEM_CONTEXT += f.read().decode("utf-8")
 
-print(SYSTEM_CONTEXT)
 # Definition of a message:
 # A message represents a single unit of communication in the chat.
 # - 'role' indicates who sent the message ('user', 'system', or 'ai')
@@ -278,6 +285,27 @@ async def get_context():
     Get the current system context/knowledge used by the chatbot.
     """
     return {"context": SYSTEM_CONTEXT}
+
+
+@app.get("/hello")
+async def hello_world():
+    """
+    Simple hello world endpoint to test the API is working.
+    """
+    return {"message": "Hello, World!"}
+
+
+@app.get("/swagger", include_in_schema=False)
+async def custom_swagger_ui_html():
+    """
+    Custom Swagger UI endpoint.
+    """
+    return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="Chat API - Swagger UI",
+        swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+        swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    )
 
 
 if __name__ == "__main__":
