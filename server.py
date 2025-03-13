@@ -4,9 +4,8 @@ from typing import List, Literal
 import uuid
 from datetime import datetime
 import os
-import httpx
+from openai import AzureOpenAI
 from dotenv import load_dotenv
-import sys
 from pathlib import Path
 
 # Custom configuration loading
@@ -65,6 +64,13 @@ print(f"API Key: {'Set' if AZURE_OPENAI_KEY else 'Not Set'}")
 print(f"Deployment: {AZURE_OPENAI_DEPLOYMENT}")
 print(f"API Version: {AZURE_OPENAI_API_VERSION}")
 
+# Create an Azure OpenAI client
+client = AzureOpenAI(
+    azure_endpoint=AZURE_OPENAI_ENDPOINT,
+    api_key=AZURE_OPENAI_KEY,
+    api_version=AZURE_OPENAI_API_VERSION
+)
+
 app = FastAPI(title="Chat API with Azure GPT-4o")
 
 # Define data models
@@ -96,7 +102,7 @@ chat_history = {}
 
 async def get_gpt4o_response(messages):
     """
-    Get a response from Azure GPT-4o for the given messages.
+    Get a response from Azure GPT-4o for the given messages using the updated OpenAI package.
     """
     # Check if environment variables are properly loaded
     if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_KEY:
@@ -116,29 +122,21 @@ async def get_gpt4o_response(messages):
         role = "assistant" if msg.role == "ai" else msg.role
         openai_messages.append({"role": role, "content": msg.content})
     
-    # Prepare the request
-    url = f"{AZURE_OPENAI_ENDPOINT}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
-    headers = {
-        "Content-Type": "application/json",
-        "api-key": AZURE_OPENAI_KEY
-    }
-    payload = {
-        "messages": openai_messages,
-        "max_tokens": 800
-    }
-    
-    # Make the API call
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload, headers=headers)
+    try:
+        # Make the OpenAI API call with the updated client
+        response = client.chat.completions.create(
+            model=AZURE_OPENAI_DEPLOYMENT,
+            messages=openai_messages,
+            max_tokens=800
+        )
         
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Azure OpenAI API error: {response.text}"
-            )
-        
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"Error calling OpenAI API: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Azure OpenAI API error: {str(e)}"
+        )
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
