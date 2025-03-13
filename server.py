@@ -430,15 +430,19 @@ async def chat(request: ChatRequest):
                 timestamp=datetime.now(),
             )
             processed_messages.append(error_response)
+            
+    # Filter messages to include only user and AI messages
+    processed_messages_trim = [msg for msg in processed_messages if msg.role in ["user", "ai"]]
 
-    # Store the chat
-    chat_response = ChatResponse(
+    # Store the full chat history internally
+    chat_history[chat_id] = ChatResponse(
         id=chat_id, messages=processed_messages, created_at=datetime.now()
     )
 
-    chat_history[chat_id] = chat_response
-
-    return chat_response
+    # Return only user-AI conversation
+    return ChatResponse(
+        id=chat_id, messages=processed_messages_trim, created_at=datetime.now()
+    )
 
 
 @app.get("/chat/{chat_id}", response_model=ChatResponse)
