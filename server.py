@@ -126,150 +126,93 @@ available_functions = [
     {
         "type": "function",
         "function": {
-            "name": "get_weather",
-            "description": "Get current weather information for a location",
+            "name": "abfallentsorgung",
+            "description": "Informationen zur Abfallentsorgung in der Stadt",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and state, e.g. San Francisco, CA"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "The unit of temperature"
-                    }
-                },
-                "required": ["location"]
+                "properties": {},
+                "required": []
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "calculate",
-            "description": "Perform a mathematical calculation",
+            "name": "aufenthaltserlaubnis",
+            "description": "Informationen zu Aufenthaltserlaubnis und Aufenthaltstiteln",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "operation": {
-                        "type": "string",
-                        "enum": ["add", "subtract", "multiply", "divide"],
-                        "description": "The mathematical operation to perform"
-                    },
-                    "a": {
-                        "type": "number",
-                        "description": "The first number"
-                    },
-                    "b": {
-                        "type": "number",
-                        "description": "The second number"
-                    }
-                },
-                "required": ["operation", "a", "b"]
+                "properties": {},
+                "required": []
             }
         }
     },
     {
         "type": "function",
         "function": {
-            "name": "search_knowledge_base",
-            "description": "Search for information in a knowledge base",
+            "name": "verlust",
+            "description": "Informationen bei Verlust von Personalausweis oder Reisepass",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of results to return"
-                    }
-                },
-                "required": ["query"]
+                "properties": {},
+                "required": []
             }
         }
     }
 ]
 
+# File path for prompt files
+PROMPTS_DIR = Path("prompts")
+
 # Function implementations
-def get_weather(location, unit="celsius"):
-    """Simulate getting weather information"""
-    # In a real implementation, this would call a weather API
-    weather_data = {
-        "location": location,
-        "temperature": random.randint(5, 35) if unit == "celsius" else random.randint(40, 95),
-        "unit": unit,
-        "condition": random.choice(["Sunny", "Cloudy", "Rainy", "Snowy", "Partly Cloudy"]),
-        "humidity": random.randint(30, 90),
-        "wind_speed": random.randint(0, 30)
-    }
-    return weather_data
+async def abfallentsorgung():
+    """Provide information about waste disposal"""
+    try:
+        file_path = PROMPTS_DIR / "abfallentsorgung.json"
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        return {"content": content}
+    except Exception as e:
+        return {"error": f"Error loading waste disposal information: {str(e)}"}
 
-def calculate(operation, a, b):
-    """Perform a calculation"""
-    results = {
-        "operation": operation,
-        "a": a,
-        "b": b
-    }
-    
-    if operation == "add":
-        results["result"] = a + b
-    elif operation == "subtract":
-        results["result"] = a - b
-    elif operation == "multiply":
-        results["result"] = a * b
-    elif operation == "divide":
-        if b == 0:
-            results["error"] = "Cannot divide by zero"
-        else:
-            results["result"] = a / b
-    
-    return results
+async def aufenthaltserlaubnis():
+    """Provide information about residence permits"""
+    try:
+        file_path = PROMPTS_DIR / "aufenthaltserlaubnis.json"
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        return {"content": content}
+    except Exception as e:
+        return {"error": f"Error loading residence permit information: {str(e)}"}
 
-def search_knowledge_base(query, max_results=3):
-    """Simulate searching a knowledge base"""
-    # In a real implementation, this would query a database or search service
-    fake_results = [
-        {
-            "title": f"Result for '{query}' - Item 1",
-            "snippet": f"This is the first search result for '{query}'. It contains some relevant information.",
-            "url": "https://example.com/result1"
-        },
-        {
-            "title": f"Another result for '{query}' - Item 2",
-            "snippet": f"This is the second search result for '{query}'. It may contain additional information.",
-            "url": "https://example.com/result2"
-        },
-        {
-            "title": f"More information about '{query}' - Item 3",
-            "snippet": f"This is the third search result for '{query}'. It provides deeper context.",
-            "url": "https://example.com/result3"
-        }
-    ]
-    
-    return {
-        "query": query,
-        "results": fake_results[:max_results]
-    }
+async def verlust():
+    """Provide information about lost ID or passport"""
+    try:
+        file_path = PROMPTS_DIR / "verlust.json"
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+        return {"content": content}
+    except Exception as e:
+        return {"error": f"Error loading lost ID/passport information: {str(e)}"}
 
 # Function dispatcher
 function_map = {
-    "get_weather": get_weather,
-    "calculate": calculate,
-    "search_knowledge_base": search_knowledge_base
+    "abfallentsorgung": abfallentsorgung,
+    "aufenthaltserlaubnis": aufenthaltserlaubnis,
+    "verlust": verlust
 }
 
-async def execute_function(function_name, arguments):
+async def execute_function(function_name, arguments=None):
     """Execute a function by name with the given arguments"""
     if function_name not in function_map:
         raise ValueError(f"Unknown function: {function_name}")
     
     function = function_map[function_name]
-    return function(**arguments)
+    # For these specific functions, we don't need any arguments
+    if function_name in ["abfallentsorgung", "aufenthaltserlaubnis", "verlust"]:
+        return await function()
+    else:
+        return await function(**(arguments or {}))
 
 async def get_gpt4o_response(messages):
     """
@@ -290,7 +233,7 @@ async def get_gpt4o_response(messages):
     # Always include system instruction to respond in HTML
     system_message = {
         "role": "system",
-        "content": "You are a helpful assistant that always responds in Markdown format. Wrap your entire response in HTML tags and use appropriate HTML elements to structure your response. Use <p> for paragraphs, <h1>, <h2>, etc. for headings, <ul> and <li> for lists, <code> for code blocks, etc."
+        "content": "You are a helpful assistant that always responds in Markdown format. "
     }
     
     # Convert our messages to OpenAI format
