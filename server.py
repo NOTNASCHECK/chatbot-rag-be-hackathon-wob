@@ -285,13 +285,20 @@ async def get_gpt4o_response(messages):
                 )
 
     try:
-        # Make the OpenAI API call with function calling
         response = client.chat.completions.create(
             model=AZURE_OPENAI_DEPLOYMENT,
             messages=openai_messages,
-            max_tokens=800,
+            max_tokens=8000,
             tools=available_functions,
             tool_choice="auto",  # Let the model decide when to call functions
+            temperature=0.2,  # Lower temperature for more focused, deterministic responses
+            top_p=0.9,  # Slightly reduced top_p to focus on more likely tokens
+            frequency_penalty=0.0,  # Default, can be adjusted to reduce repetition
+            presence_penalty=0.0,  # Default, can be adjusted to encourage topic diversity
+            seed=42,  # Set a consistent seed for reproducibility
+            # Add metadata for tracing and evaluation
+            user="system-api",  # Identifies system-initiated requests
+            stop=None,  # Optional sequences where the API will stop generating further tokens
         )
 
         ai_message = response.choices[0].message
