@@ -3,13 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
-from typing import List, Literal
+from typing import List, Literal, Dict, Any, Optional, Union
 import uuid
 from datetime import datetime
 import os
 from openai import AzureOpenAI
 from dotenv import load_dotenv
 from pathlib import Path
+import json
+import random
 
 # Custom configuration loading
 def load_config_from_env():
@@ -76,8 +78,8 @@ client = AzureOpenAI(
 
 # Create FastAPI app with custom configuration
 app = FastAPI(
-    title="Chat API with Azure GPT-4o",
-    description="A RESTful API for chatting with Azure OpenAI GPT-4o model",
+    title="Chat API with Azure GPT-4o and Function Calling",
+    description="A RESTful API for chatting with Azure OpenAI GPT-4o model, with function calling capabilities",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -94,9 +96,15 @@ app.add_middleware(
 )
 
 # Define data models
+class MessageContent(BaseModel):
+    type: Literal["text", "function_call", "function_response"] = "text"
+    text: Optional[str] = None
+    function_call: Optional[Dict[str, Any]] = None
+    function_response: Optional[Dict[str, Any]] = None
+
 class Message(BaseModel):
-    role: Literal["user", "ai", "system"]
-    content: str
+    role: Literal["user", "ai", "system", "function"]
+    content: Union[str, MessageContent]
     timestamp: datetime = None
     
     class Config:
@@ -113,16 +121,159 @@ class ChatResponse(BaseModel):
 # In-memory storage for chats
 chat_history = {}
 
-# Definition of a message:
-# A message represents a single unit of communication in the chat.
-# - 'role' indicates who sent the message ('user', 'system', or 'ai')
-# - 'content' contains the actual text of the message
-# - 'timestamp' records when the message was sent
-# Messages are exchanged between the user and AI to form a conversation.
+# Define available functions
+available_functions = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Get current weather information for a location",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g. San Francisco, CA"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "The unit of temperature"
+                    }
+                },
+                "required": ["location"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calculate",
+            "description": "Perform a mathematical calculation",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["add", "subtract", "multiply", "divide"],
+                        "description": "The mathematical operation to perform"
+                    },
+                    "a": {
+                        "type": "number",
+                        "description": "The first number"
+                    },
+                    "b": {
+                        "type": "number",
+                        "description": "The second number"
+                    }
+                },
+                "required": ["operation", "a", "b"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "Search for information in a knowledge base",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return"
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }
+]
+
+# Function implementations
+def get_weather(location, unit="celsius"):
+    """Simulate getting weather information"""
+    # In a real implementation, this would call a weather API
+    weather_data = {
+        "location": location,
+        "temperature": random.randint(5, 35) if unit == "celsius" else random.randint(40, 95),
+        "unit": unit,
+        "condition": random.choice(["Sunny", "Cloudy", "Rainy", "Snowy", "Partly Cloudy"]),
+        "humidity": random.randint(30, 90),
+        "wind_speed": random.randint(0, 30)
+    }
+    return weather_data
+
+def calculate(operation, a, b):
+    """Perform a calculation"""
+    results = {
+        "operation": operation,
+        "a": a,
+        "b": b
+    }
+    
+    if operation == "add":
+        results["result"] = a + b
+    elif operation == "subtract":
+        results["result"] = a - b
+    elif operation == "multiply":
+        results["result"] = a * b
+    elif operation == "divide":
+        if b == 0:
+            results["error"] = "Cannot divide by zero"
+        else:
+            results["result"] = a / b
+    
+    return results
+
+def search_knowledge_base(query, max_results=3):
+    """Simulate searching a knowledge base"""
+    # In a real implementation, this would query a database or search service
+    fake_results = [
+        {
+            "title": f"Result for '{query}' - Item 1",
+            "snippet": f"This is the first search result for '{query}'. It contains some relevant information.",
+            "url": "https://example.com/result1"
+        },
+        {
+            "title": f"Another result for '{query}' - Item 2",
+            "snippet": f"This is the second search result for '{query}'. It may contain additional information.",
+            "url": "https://example.com/result2"
+        },
+        {
+            "title": f"More information about '{query}' - Item 3",
+            "snippet": f"This is the third search result for '{query}'. It provides deeper context.",
+            "url": "https://example.com/result3"
+        }
+    ]
+    
+    return {
+        "query": query,
+        "results": fake_results[:max_results]
+    }
+
+# Function dispatcher
+function_map = {
+    "get_weather": get_weather,
+    "calculate": calculate,
+    "search_knowledge_base": search_knowledge_base
+}
+
+async def execute_function(function_name, arguments):
+    """Execute a function by name with the given arguments"""
+    if function_name not in function_map:
+        raise ValueError(f"Unknown function: {function_name}")
+    
+    function = function_map[function_name]
+    return function(**arguments)
 
 async def get_gpt4o_response(messages):
     """
-    Get a response from Azure GPT-4o for the given messages using the updated OpenAI package.
+    Get a response from Azure GPT-4o for the given messages, with function calling.
     """
     # Check if environment variables are properly loaded
     if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_KEY:
@@ -136,21 +287,80 @@ async def get_gpt4o_response(messages):
             detail=error_message
         )
     
+    # Always include system instruction to respond in HTML
+    system_message = {
+        "role": "system",
+        "content": "You are a helpful assistant that always responds in Markdown format. Wrap your entire response in HTML tags and use appropriate HTML elements to structure your response. Use <p> for paragraphs, <h1>, <h2>, etc. for headings, <ul> and <li> for lists, <code> for code blocks, etc."
+    }
+    
     # Convert our messages to OpenAI format
-    openai_messages = []
+    # Start with the system message and add the conversation messages
+    openai_messages = [system_message]
     for msg in messages:
-        role = "assistant" if msg.role == "ai" else msg.role
-        openai_messages.append({"role": role, "content": msg.content})
+        if isinstance(msg.content, str):
+            role = "assistant" if msg.role == "ai" else msg.role
+            openai_messages.append({"role": role, "content": msg.content})
+        else:
+            # Handle structured message content
+            if msg.role == "ai" and msg.content.type == "function_call":
+                # Function call from assistant
+                # The API expects arguments as a string, not an object
+                function_call_data = msg.content.function_call.copy()
+                if "arguments" in function_call_data and isinstance(function_call_data["arguments"], dict):
+                    function_call_data["arguments"] = json.dumps(function_call_data["arguments"])
+                
+                openai_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "function_call": function_call_data
+                })
+            elif msg.role == "function" and msg.content.type == "function_response":
+                # Function response
+                openai_messages.append({
+                    "role": "function",
+                    "name": msg.content.function_response.get("name"),
+                    "content": json.dumps(msg.content.function_response.get("content"))
+                })
+            else:
+                # Regular message with text
+                role = "assistant" if msg.role == "ai" else msg.role
+                openai_messages.append({"role": role, "content": msg.content.text or ""})
     
     try:
-        # Make the OpenAI API call with the updated client
+        # Make the OpenAI API call with function calling
         response = client.chat.completions.create(
             model=AZURE_OPENAI_DEPLOYMENT,
             messages=openai_messages,
-            max_tokens=800
+            max_tokens=800,
+            tools=available_functions,
+            tool_choice="auto"  # Let the model decide when to call functions
         )
         
-        return response.choices[0].message.content
+        ai_message = response.choices[0].message
+        
+        # Check if the model wants to call a function
+        if ai_message.tool_calls:
+            # The model wants to call a function
+            function_call = ai_message.tool_calls[0]
+            function_name = function_call.function.name
+            function_args = json.loads(function_call.function.arguments)
+            
+            # Return the function call information
+            return {
+                "type": "function_call",
+                "function_call": {
+                    "id": function_call.id,
+                    "name": function_name,
+                    "arguments": function_args
+                },
+                "text": ai_message.content  # This might be None or contain explanatory text
+            }
+        else:
+            # Regular text response
+            return {
+                "type": "text",
+                "text": ai_message.content
+            }
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
         raise HTTPException(
@@ -162,8 +372,7 @@ async def get_gpt4o_response(messages):
 async def chat(request: ChatRequest):
     """
     Endpoint to post a conversation between a user and AI.
-    Expects a list of messages with roles ('user' or 'ai').
-    Automatically generates AI responses using Azure GPT-4o.
+    Supports function calling and multi-turn conversations.
     """
     # Generate a unique ID for this chat
     chat_id = str(uuid.uuid4())
@@ -175,17 +384,108 @@ async def chat(request: ChatRequest):
             message.timestamp = datetime.now()
         processed_messages.append(message)
     
-    # Get AI response for the latest message if it's from a user
-    if processed_messages and processed_messages[-1].role == "user":
-        ai_response_text = await get_gpt4o_response(processed_messages)
-        
-        # Add AI response to messages
+    # Return an error if there are no messages or if the last message is not from a user
+    if not processed_messages or processed_messages[-1].role != "user":
+        raise HTTPException(
+            status_code=400,
+            detail="The conversation must end with a user message"
+        )
+    
+    # Initial AI response
+    ai_response = await get_gpt4o_response(processed_messages)
+    
+    # Create AI message based on response type
+    if ai_response["type"] == "text":
+        # Simple text response
         ai_message = Message(
             role="ai",
-            content=ai_response_text,
+            content=MessageContent(
+                type="text",
+                text=ai_response["text"]
+            ),
             timestamp=datetime.now()
         )
         processed_messages.append(ai_message)
+    elif ai_response["type"] == "function_call":
+        # The model wants to call a function
+        function_call = ai_response["function_call"]
+        
+        # Add the function call message
+        function_call_message = Message(
+            role="ai",
+            content=MessageContent(
+                type="function_call",
+                function_call=function_call,
+                text=ai_response.get("text")
+            ),
+            timestamp=datetime.now()
+        )
+        processed_messages.append(function_call_message)
+        
+        # Execute the function
+        try:
+            function_result = await execute_function(
+                function_call["name"], 
+                function_call["arguments"]
+            )
+            
+            # Add the function response message
+            function_response_message = Message(
+                role="function",
+                content=MessageContent(
+                    type="function_response",
+                    function_response={
+                        "name": function_call["name"],
+                        "content": function_result
+                    }
+                ),
+                timestamp=datetime.now()
+            )
+            processed_messages.append(function_response_message)
+            
+            # Get a follow-up response from the AI after the function call
+            follow_up_response = await get_gpt4o_response(processed_messages)
+            
+            # Add the follow-up response
+            if follow_up_response["type"] == "text":
+                follow_up_message = Message(
+                    role="ai",
+                    content=MessageContent(
+                        type="text",
+                        text=follow_up_response["text"]
+                    ),
+                    timestamp=datetime.now()
+                )
+                processed_messages.append(follow_up_message)
+            # Note: We're not handling nested function calls here for simplicity
+            # In a production system, you might want to support multiple levels of function calls
+        
+        except Exception as e:
+            # Handle function execution errors
+            error_message = Message(
+                role="function",
+                content=MessageContent(
+                    type="function_response",
+                    function_response={
+                        "name": function_call["name"],
+                        "content": {"error": str(e)}
+                    }
+                ),
+                timestamp=datetime.now()
+            )
+            processed_messages.append(error_message)
+            
+            # Get a follow-up response to handle the error
+            error_follow_up = await get_gpt4o_response(processed_messages)
+            error_response = Message(
+                role="ai",
+                content=MessageContent(
+                    type="text",
+                    text=error_follow_up["text"]
+                ),
+                timestamp=datetime.now()
+            )
+            processed_messages.append(error_response)
     
     # Store the chat
     chat_response = ChatResponse(
@@ -222,6 +522,21 @@ async def hello_world():
     """
     return {"message": "Hello, World!"}
 
+@app.get("/functions")
+async def get_available_functions():
+    """
+    Get a list of available functions that the AI can call.
+    """
+    return {"functions": available_functions}
+
+@app.post("/chat-with-functions", response_model=ChatResponse)
+async def chat_with_functions(request: ChatRequest):
+    """
+    Explicit endpoint for chatting with function calling capabilities.
+    Same as /chat but makes it clear functions are available.
+    """
+    return await chat(request)
+
 @app.get("/swagger", include_in_schema=False)
 async def custom_swagger_ui_html():
     """
@@ -240,39 +555,13 @@ async def get_open_api_endpoint():
     Returns the OpenAPI schema.
     """
     return get_openapi(
-        title="Chat API with Azure GPT-4o",
+        title="Chat API with Azure GPT-4o and Function Calling",
         version="1.0.0",
-        description="A RESTful API for chatting with Azure OpenAI GPT-4o model",
+        description="A RESTful API for chatting with Azure OpenAI GPT-4o model, with function calling capabilities",
         routes=app.routes,
     )
 
-class ChatTestRequest(BaseModel):
-    message: str
 
-class ChatTestResponse(BaseModel):
-    message: str
-    response: str
-
-@app.post("/chat-test", response_model=ChatTestResponse)
-async def chat_test(request: ChatTestRequest):
-    """
-    Simple endpoint to test the chat functionality.
-    Send a single message and get a direct response from Azure GPT-4o.
-    """
-    # Create a simple message array with just this one message
-    test_message = Message(
-        role="user",
-        content=request.message,
-        timestamp=datetime.now()
-    )
-    
-    # Get AI response
-    ai_response = await get_gpt4o_response([test_message])
-    
-    return ChatTestResponse(
-        message=request.message,
-        response=ai_response
-    )
 
 if __name__ == "__main__":
     import uvicorn
