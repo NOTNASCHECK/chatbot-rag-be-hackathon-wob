@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
-from typing import List, Literal, Dict, Any, Optional, Union
+from typing import List, Literal, Dict, Any, Optional
 import uuid
 from datetime import datetime
 import os
@@ -11,7 +11,6 @@ from openai import AzureOpenAI
 from dotenv import load_dotenv
 from pathlib import Path
 import json
-import random
 
 
 # Custom configuration loading
@@ -98,18 +97,11 @@ app.add_middleware(
 )
 
 
-# Define data models
-class MessageContent(BaseModel):
-    type: Literal["text", "function_call", "function_response"] = "text"
-    text: Optional[str] = None
-    function_call: Optional[Dict[str, Any]] = None
-    function_response: Optional[Dict[str, Any]] = None
-
-
+# Define simplified message model
 class Message(BaseModel):
-    role: Literal["user", "ai", "system", "function"]
-    content: Union[str, MessageContent]
-    timestamp: datetime = None
+    role: Literal["user", "ai", "ai_function", "function_call"]
+    content: Any  # Can be a string or JSON object depending on role
+    timestamp: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -233,7 +225,7 @@ async def get_gpt4o_response(messages):
         print("Optional variables: AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_API_VERSION")
         raise HTTPException(status_code=500, detail=error_message)
 
-    # Always include system instruction to respond in HTML
+    # Always include system instruction
     system_message = {
         "role": "system",
         "content": SYSTEM_CONTEXT,
@@ -242,47 +234,38 @@ async def get_gpt4o_response(messages):
     # Convert our messages to OpenAI format
     # Start with the system message and add the conversation messages
     openai_messages = [system_message]
+    
     for msg in messages:
-        if isinstance(msg.content, str):
-            role = "assistant" if msg.role == "ai" else msg.role
-            openai_messages.append({"role": role, "content": msg.content})
-        else:
-            # Handle structured message content
-            if msg.role == "ai" and msg.content.type == "function_call":
-                # Function call from assistant
-                # The API expects arguments as a string, not an object
-                function_call_data = msg.content.function_call.copy()
-                if "arguments" in function_call_data and isinstance(
-                    function_call_data["arguments"], dict
-                ):
-                    function_call_data["arguments"] = json.dumps(
-                        function_call_data["arguments"]
-                    )
+        if msg.role == "user":
+            openai_messages.append({"role": "user", "content": msg.content})
+        elif msg.role == "ai":
+            openai_messages.append({"role": "assistant", "content": msg.content})
+        elif msg.role == "ai_function":
+            # Function call from assistant
+            function_call_data = msg.content.copy()
+            if "arguments" in function_call_data and isinstance(
+                function_call_data["arguments"], dict
+            ):
+                function_call_data["arguments"] = json.dumps(
+                    function_call_data["arguments"]
+                )
 
-                openai_messages.append(
-                    {
-                        "role": "assistant",
-                        "content": None,
-                        "function_call": function_call_data,
-                    }
-                )
-            elif msg.role == "function" and msg.content.type == "function_response":
-                # Function response
-                openai_messages.append(
-                    {
-                        "role": "function",
-                        "name": msg.content.function_response.get("name"),
-                        "content": json.dumps(
-                            msg.content.function_response.get("content")
-                        ),
-                    }
-                )
-            else:
-                # Regular message with text
-                role = "assistant" if msg.role == "ai" else msg.role
-                openai_messages.append(
-                    {"role": role, "content": msg.content.text or ""}
-                )
+            openai_messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "function_call": function_call_data,
+                }
+            )
+        elif msg.role == "function_call":
+            # Function response
+            openai_messages.append(
+                {
+                    "role": "function",
+                    "name": msg.content.get("name"),
+                    "content": json.dumps(msg.content.get("content")),
+                }
+            )
 
     try:
         response = client.chat.completions.create(
@@ -310,19 +293,19 @@ async def get_gpt4o_response(messages):
             function_name = function_call.function.name
             function_args = json.loads(function_call.function.arguments)
 
-            # Return the function call information
+            # Return the function call information as ai_function role
             return {
-                "type": "function_call",
-                "function_call": {
+                "role": "ai_function",
+                "content": {
                     "id": function_call.id,
                     "name": function_name,
                     "arguments": function_args,
-                },
-                "text": ai_message.content,  # This might be None or contain explanatory text
+                    "text": ai_message.content,  # This might be None or contain explanatory text
+                }
             }
         else:
-            # Regular text response
-            return {"type": "text", "text": ai_message.content}
+            # Regular text response with ai role
+            return {"role": "ai", "content": ai_message.content}
     except Exception as e:
         print(f"Error calling OpenAI API: {e}")
         raise HTTPException(status_code=500, detail=f"Azure OpenAI API error: {str(e)}")
@@ -354,26 +337,22 @@ async def chat(request: ChatRequest):
     ai_response = await get_gpt4o_response(processed_messages)
 
     # Create AI message based on response type
-    if ai_response["type"] == "text":
+    if ai_response["role"] == "ai":
         # Simple text response
         ai_message = Message(
             role="ai",
-            content=MessageContent(type="text", text=ai_response["text"]),
+            content=ai_response["content"],
             timestamp=datetime.now(),
         )
         processed_messages.append(ai_message)
-    elif ai_response["type"] == "function_call":
+    elif ai_response["role"] == "ai_function":
         # The model wants to call a function
-        function_call = ai_response["function_call"]
+        function_data = ai_response["content"]
 
         # Add the function call message
         function_call_message = Message(
-            role="ai",
-            content=MessageContent(
-                type="function_call",
-                function_call=function_call,
-                text=ai_response.get("text"),
-            ),
+            role="ai_function",
+            content=function_data,
             timestamp=datetime.now(),
         )
         processed_messages.append(function_call_message)
@@ -381,19 +360,16 @@ async def chat(request: ChatRequest):
         # Execute the function
         try:
             function_result = await execute_function(
-                function_call["name"], function_call["arguments"]
+                function_data["name"], function_data["arguments"]
             )
 
             # Add the function response message
             function_response_message = Message(
-                role="function",
-                content=MessageContent(
-                    type="function_response",
-                    function_response={
-                        "name": function_call["name"],
-                        "content": function_result,
-                    },
-                ),
+                role="function_call",
+                content={
+                    "name": function_data["name"],
+                    "content": function_result,
+                },
                 timestamp=datetime.now(),
             )
             processed_messages.append(function_response_message)
@@ -402,29 +378,23 @@ async def chat(request: ChatRequest):
             follow_up_response = await get_gpt4o_response(processed_messages)
 
             # Add the follow-up response
-            if follow_up_response["type"] == "text":
+            if follow_up_response["role"] == "ai":
                 follow_up_message = Message(
                     role="ai",
-                    content=MessageContent(
-                        type="text", text=follow_up_response["text"]
-                    ),
+                    content=follow_up_response["content"],
                     timestamp=datetime.now(),
                 )
                 processed_messages.append(follow_up_message)
             # Note: We're not handling nested function calls here for simplicity
-            # In a production system, you might want to support multiple levels of function calls
 
         except Exception as e:
             # Handle function execution errors
             error_message = Message(
-                role="function",
-                content=MessageContent(
-                    type="function_response",
-                    function_response={
-                        "name": function_call["name"],
-                        "content": {"error": str(e)},
-                    },
-                ),
+                role="function_call",
+                content={
+                    "name": function_data["name"],
+                    "content": {"error": str(e)},
+                },
                 timestamp=datetime.now(),
             )
             processed_messages.append(error_message)
@@ -433,13 +403,13 @@ async def chat(request: ChatRequest):
             error_follow_up = await get_gpt4o_response(processed_messages)
             error_response = Message(
                 role="ai",
-                content=MessageContent(type="text", text=error_follow_up["text"]),
+                content=error_follow_up["content"],
                 timestamp=datetime.now(),
             )
             processed_messages.append(error_response)
             
-    # Filter messages to include only user and AI messages
-    processed_messages_trim = [msg for msg in processed_messages if msg.role in ["user", "ai"]]
+    # Filter messages to include only user and ai messages for frontend
+    frontend_messages = [msg for msg in processed_messages if msg.role in ["user", "ai"]]
 
     # Store the full chat history internally
     chat_history[chat_id] = ChatResponse(
@@ -448,7 +418,7 @@ async def chat(request: ChatRequest):
 
     # Return only user-AI conversation
     return ChatResponse(
-        id=chat_id, messages=processed_messages_trim, created_at=datetime.now()
+        id=chat_id, messages=frontend_messages, created_at=datetime.now()
     )
 
 
@@ -456,19 +426,42 @@ async def chat(request: ChatRequest):
 async def get_chat(chat_id: str):
     """
     Retrieve a specific chat by its ID.
+    Only returns user and ai messages to the frontend.
     """
     if chat_id not in chat_history:
         raise HTTPException(status_code=404, detail="Chat not found")
-
-    return chat_history[chat_id]
+    
+    chat = chat_history[chat_id]
+    
+    # Filter to only include user and ai messages
+    frontend_messages = [msg for msg in chat.messages if msg.role in ["user", "ai"]]
+    
+    return ChatResponse(
+        id=chat.id, 
+        messages=frontend_messages, 
+        created_at=chat.created_at
+    )
 
 
 @app.get("/chats", response_model=List[ChatResponse])
 async def get_all_chats():
     """
     Retrieve all stored chats.
+    Only returns user and ai messages to the frontend.
     """
-    return list(chat_history.values())
+    frontend_chats = []
+    
+    for chat in chat_history.values():
+        frontend_messages = [msg for msg in chat.messages if msg.role in ["user", "ai"]]
+        frontend_chats.append(
+            ChatResponse(
+                id=chat.id,
+                messages=frontend_messages,
+                created_at=chat.created_at
+            )
+        )
+    
+    return frontend_chats
 
 
 @app.get("/hello")
