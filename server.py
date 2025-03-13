@@ -6,9 +6,51 @@ from datetime import datetime
 import os
 import httpx
 from dotenv import load_dotenv
+import sys
+from pathlib import Path
+
+# Custom configuration loading
+def load_config_from_env():
+    """Load configuration from .env file with robust error handling"""
+    # Try multiple possible .env file locations
+    possible_paths = [
+        Path.cwd() / '.env',                       # Current working directory
+        Path(__file__).parent / '.env',            # Same directory as this file
+        Path(__file__).parent.parent / '.env',     # Parent directory
+    ]
+    
+    env_file = None
+    for path in possible_paths:
+        if path.exists():
+            env_file = path
+            break
+    
+    if env_file:
+        print(f"Found .env file at: {env_file}")
+        try:
+            load_dotenv(dotenv_path=env_file, override=True)
+        except Exception as e:
+            print(f"Error loading .env with dotenv: {e}")
+            # Manual loading as fallback
+            try:
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            try:
+                                key, value = line.split('=', 1)
+                                os.environ[key.strip()] = value.strip()
+                            except ValueError:
+                                print(f"Skipping invalid line in .env: {line}")
+            except Exception as e2:
+                print(f"Error with manual .env loading: {e2}")
+    else:
+        print("No .env file found in any expected location.")
+        print(f"Searched in: {[str(p) for p in possible_paths]}")
+        print("Will rely on system environment variables.")
 
 # Load environment variables
-load_dotenv(override=True)
+load_config_from_env()
 
 # Azure OpenAI configuration
 AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
@@ -185,4 +227,4 @@ async def chat_test(request: ChatTestRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=3005)
