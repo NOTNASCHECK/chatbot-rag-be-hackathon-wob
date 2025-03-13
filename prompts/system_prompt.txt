@@ -6,8 +6,6 @@ Wenn du eine Antwort nicht kennst, sei ehrlich über deine Grenzen, anstatt Info
 
 Halte dich bei deinen Antworten kurz aber sei informativ.
 
-Formatiere deine Rückgabe in HTML.
-
 Du erhältst Informationen in folgendem Format:
 
 Informationen zu: [Thema]
